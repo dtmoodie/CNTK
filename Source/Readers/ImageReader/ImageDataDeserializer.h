@@ -43,19 +43,21 @@ private:
     // A helper class for generation of type specific labels (currently float/double only).
     class LabelGenerator;
     typedef std::shared_ptr<LabelGenerator> LabelGeneratorPtr;
-    LabelGeneratorPtr m_labelGenerator;
+    std::vector<LabelGeneratorPtr> m_labelGenerator;
 
     // Sequence descriptions for all input data.
-    std::vector<ImageSequenceDescription> m_imageSequences;
+    std::vector<std::vector<ImageSequenceDescription>> m_imageSequences;
 
     // Buffer to store label data.
-    std::vector<SparseSequenceDataPtr> m_labels;
+    std::vector<std::vector<SparseSequenceDataPtr>> m_labels;
 
     // Buffer to store feature data.
-    std::vector<cv::Mat> m_currentImages;
+    std::vector<std::vector<cv::Mat>> m_currentImages;
 
     // Element type of the feature/label stream (currently float/double only).
     ElementType m_featureElementType;
+    std::vector<size_t> featureIds;
+    std::vector<size_t> labelIds;
 };
 
 }}}

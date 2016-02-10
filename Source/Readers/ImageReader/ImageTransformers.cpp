@@ -25,8 +25,9 @@ void ImageTransformerBase::Initialize(TransformerPtr next,
     m_seed = std::stoi(readerConfig(L"seed", "0"));
 
     ImageConfigHelper config(readerConfig);
-    size_t featureStreamId = config.GetFeatureStreamId();
-    m_appliedStreamIds.push_back(featureStreamId);
+    m_appliedStreamIds = config.GetFeatureStreamIds();
+    //auto featureStreamIds = config.GetFeatureStreamIds();
+    //m_appliedStreamIds.push_back(featureStreamId);
 
     const auto &inputStreams = GetInputStreams();
     m_outputStreams.resize(inputStreams.size());
@@ -371,8 +372,8 @@ void TransposeTransformer::Initialize(TransformerPtr next,
 
     // Currently we only support a single stream.
     ImageConfigHelper config(readerConfig);
-    size_t featureStreamId = config.GetFeatureStreamId();
-    m_appliedStreamIds.push_back(featureStreamId);
+    //size_t featureStreamId = config.GetFeatureStreamIds();
+    m_appliedStreamIds = config.GetFeatureStreamIds();;
 
     const auto &inputStreams = GetInputStreams();
     m_outputStreams.resize(inputStreams.size());

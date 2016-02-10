@@ -49,32 +49,45 @@ ImageDataDeserializer::ImageDataDeserializer(const ConfigParameters& config)
 {
     ImageConfigHelper configHelper(config);
     m_streams = configHelper.GetStreams();
-    assert(m_streams.size() == 2);
-    const auto& label = m_streams[configHelper.GetLabelStreamId()];
-    const auto& feature = m_streams[configHelper.GetFeatureStreamId()];
+    //assert(m_streams.size() == 2);
+    labelIds = configHelper.GetLabelStreamIds();
+    featureIds = configHelper.GetFeatureStreamIds();
+    //const auto& label = m_streams[];
+    //const auto& feature = m_streams[];
 
     // Expect data in HWC.
-    ImageDimensions dimensions(*feature->m_sampleLayout, configHelper.GetDataFormat());
-    feature->m_sampleLayout = std::make_shared<TensorShape>(dimensions.AsTensorShape(HWC));
-
-    label->m_storageType = StorageType::sparse_csc;
-    feature->m_storageType = StorageType::dense;
-
-    m_featureElementType = feature->m_elementType;
-    size_t labelDimension = label->m_sampleLayout->GetDim(0);
-
-    if (label->m_elementType == ElementType::tfloat)
+    for(auto idx : featureIds)
     {
-        m_labelGenerator = std::make_shared<TypedLabelGenerator<float>>();
+        const auto& feature = m_streams[idx];
+        ImageDimensions dimensions(*feature->m_sampleLayout, configHelper.GetDataFormat());
+        feature->m_sampleLayout = std::make_shared<TensorShape>(dimensions.AsTensorShape(HWC));
+        feature->m_storageType = StorageType::dense;
+        m_featureElementType = feature->m_elementType;
     }
-    else if (label->m_elementType == ElementType::tdouble)
+    int labelDimension = -1;
+    for(auto idx : labelIds)
     {
-        m_labelGenerator = std::make_shared<TypedLabelGenerator<double>>();
+        const auto& label = m_streams[idx];
+        label->m_storageType = StorageType::sparse_csc;
+        if(labelDimension == -1)
+            labelDimension = static_cast<int>(label->m_sampleLayout->GetDim(0));
+        else if(labelDimension != label->m_sampleLayout->GetDim(0))
+            RuntimeError("All label dimensions must be the same currently");
+        if (label->m_elementType == ElementType::tfloat)
+        {
+            m_labelGenerator.push_back(std::make_shared<TypedLabelGenerator<float>>());
+        }
+        else if (label->m_elementType == ElementType::tdouble)
+        {
+            m_labelGenerator.push_back(std::make_shared<TypedLabelGenerator<double>>());
+        }
+        else
+        {
+            RuntimeError("Unsupported label element type '%d'.", label->m_elementType);
+        }
     }
-    else
-    {
-        RuntimeError("Unsupported label element type '%d'.", label->m_elementType);
-    }
+
+    
 
     CreateSequenceDescriptions(configHelper.GetMapPath(), labelDimension);
 }
@@ -90,35 +103,56 @@ void ImageDataDeserializer::CreateSequenceDescriptions(std::string mapPath, size
     }
 
     std::string line;
-    ImageSequenceDescription description;
-    description.m_numberOfSamples = 1;
-    description.m_isValid = true;
+    if(labelIds.size() > featureIds.size())
+    {
+        RuntimeError("Currently cannot support more labels ('%d') than features('%d')", labelIds.size(), featureIds.size());
+    }
+    
     for (size_t lineIndex = 0; std::getline(mapFile, line); ++lineIndex)
     {
         std::stringstream ss(line);
         std::string imagePath;
         std::string classId;
-        if (!std::getline(ss, imagePath, '\t') || !std::getline(ss, classId, '\t'))
+        
+        std::vector<ImageSequenceDescription> descriptions;
+        ImageSequenceDescription description;
+        description.m_numberOfSamples = 1;
+        description.m_isValid = true;
+        for(int i = 0; i < featureIds.size(); ++i)
+        {
+            if(!std::getline(ss, imagePath, '\t'))
+            {
+            
+            }
+            description.m_id = lineIndex;
+            description.m_chunkId = lineIndex;
+            description.m_path = imagePath;
+            descriptions.push_back(description);
+        }
+        for(int i = 0; i < labelIds.size(); ++i)
+        {
+            if(!std::getline(ss, classId, '\t'))
+            {
+            
+            }
+            descriptions[i].m_classId = std::stoi(classId);
+            if (descriptions[i].m_classId >= labelDimension)
+            {
+                RuntimeError(
+                    "Image '%s' has invalid class id '%d'. Expected label dimension is '%d'.",
+                    mapPath.c_str(),
+                    static_cast<int>(descriptions[i].m_classId),
+                    static_cast<int>(labelDimension));
+            }
+        }
+
+        /*if (!std::getline(ss, imagePath, '\t') || )
         {
             RuntimeError("Invalid map file format, must contain 2 tab-delimited columns: %s, line: %d.",
                          mapPath.c_str(),
                          static_cast<int>(lineIndex));
-        }
-
-        description.m_id = lineIndex;
-        description.m_chunkId = lineIndex;
-        description.m_path = imagePath;
-        description.m_classId = std::stoi(classId);
-
-        if (description.m_classId >= labelDimension)
-        {
-            RuntimeError(
-                "Image '%s' has invalid class id '%d'. Expected label dimension is '%d'.",
-                mapPath.c_str(),
-                static_cast<int>(description.m_classId),
-                static_cast<int>(labelDimension));
-        }
-        m_imageSequences.push_back(description);
+        }*/
+        m_imageSequences.push_back(descriptions);
     }
 }
 
@@ -134,8 +168,8 @@ std::vector<std::vector<SequenceDataPtr>> ImageDataDeserializer::GetSequencesByI
         RuntimeError("Number of requested sequences cannot be zero.");
     }
 
-    m_currentImages.resize(ids.size());
-    m_labels.resize(ids.size());
+    m_currentImages.resize(ids.size(), std::vector<cv::Mat>(featureIds.size()));
+    m_labels.resize(ids.size(), std::vector<SparseSequenceDataPtr>(labelIds.size()));
 
     std::vector<std::vector<SequenceDataPtr>> result;
     result.resize(ids.size());
@@ -151,45 +185,47 @@ std::vector<std::vector<SequenceDataPtr>> ImageDataDeserializer::GetSequencesByI
         }
 
         const auto& imageSequence = m_imageSequences[ids[i]];
-
-        // Construct image
-        m_currentImages[i] = std::move(cv::imread(imageSequence.m_path, cv::IMREAD_COLOR));
-        cv::Mat& cvImage = m_currentImages[i];
-
-        if (!cvImage.data)
+        int j = 0;
+        for(const auto& imageSubSequence: imageSequence)
         {
-            RuntimeError("Cannot open file '%s'", imageSequence.m_path.c_str());
+            // Construct image
+            m_currentImages[i][j] = std::move(cv::imread(imageSubSequence.m_path, cv::IMREAD_COLOR));
+            cv::Mat& cvImage = m_currentImages[i][j];    
+            
+            if (!cvImage.data)
+            {
+                RuntimeError("Cannot open file '%s'", imageSubSequence.m_path.c_str());
+            }
+            // Convert element type.
+            // TODO We should all native CV element types to be able to match the behavior of the old reader.
+            int dataType = m_featureElementType == ElementType::tfloat ? CV_32F : CV_64F;
+            if (cvImage.type() != CV_MAKETYPE(dataType, cvImage.channels()))
+            {
+                cvImage.convertTo(cvImage, dataType);
+            }
+
+            if (!cvImage.isContinuous())
+            {
+                cvImage = cvImage.clone();
+            }
+            assert(cvImage.isContinuous());
+            ImageDimensions dimensions(cvImage.cols, cvImage.rows, cvImage.channels());
+            auto image = std::make_shared<DenseSequenceData>();
+            image->m_data = cvImage.data;
+            image->m_sampleLayout = std::make_shared<TensorShape>(dimensions.AsTensorShape(HWC));
+            image->m_numberOfSamples = 1;
+            if(j < m_labels[i].size())
+            {
+                if (m_labels[i][j] == nullptr)
+                {
+                    m_labels[i][j] = std::make_shared<SparseSequenceData>();
+                }
+                m_labelGenerator[j]->CreateLabelFor(imageSubSequence.m_classId, *m_labels[i][j]);
+                result[i] = std::move(std::vector<SequenceDataPtr>{image, m_labels[i][j]});
+            }            
+            ++j;
         }
-
-        // Convert element type.
-        // TODO We should all native CV element types to be able to match the behavior of the old reader.
-        int dataType = m_featureElementType == ElementType::tfloat ? CV_32F : CV_64F;
-        if (cvImage.type() != CV_MAKETYPE(dataType, cvImage.channels()))
-        {
-            cvImage.convertTo(cvImage, dataType);
-        }
-
-        if (!cvImage.isContinuous())
-        {
-            cvImage = cvImage.clone();
-        }
-        assert(cvImage.isContinuous());
-
-        ImageDimensions dimensions(cvImage.cols, cvImage.rows, cvImage.channels());
-        auto image = std::make_shared<DenseSequenceData>();
-        image->m_data = cvImage.data;
-        image->m_sampleLayout = std::make_shared<TensorShape>(dimensions.AsTensorShape(HWC));
-        image->m_numberOfSamples = 1;
-
-        if (m_labels[i] == nullptr)
-        {
-            m_labels[i] = std::make_shared<SparseSequenceData>();
-        }
-
-        m_labelGenerator->CreateLabelFor(imageSequence.m_classId, *m_labels[i]);
-        result[i] = std::move(std::vector<SequenceDataPtr>{image, m_labels[i]});
     }
-
     return result;
 }
 
@@ -200,9 +236,9 @@ void ImageDataDeserializer::FillSequenceDescriptions(SequenceDescriptions& timel
         m_imageSequences.begin(),
         m_imageSequences.end(),
         timeline.begin(),
-        [](const ImageSequenceDescription& desc)
+        [](const std::vector<ImageSequenceDescription>& desc)
         {
-            return &desc;
+            return &desc[0];
         });
 }
 

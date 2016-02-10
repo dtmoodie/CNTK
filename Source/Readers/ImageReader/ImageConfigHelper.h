@@ -23,10 +23,10 @@ public:
     std::vector<StreamDescriptionPtr> GetStreams() const;
 
     // Get index of the feature stream.
-    size_t GetFeatureStreamId() const;
+    std::vector<size_t> GetFeatureStreamIds() const;
 
     // Get index of the label stream.
-    size_t GetLabelStreamId() const;
+    std::vector<size_t> GetLabelStreamIds() const;
 
     // Get the map file path that describes mapping of images into their labels.
     std::string GetMapPath() const;
@@ -52,6 +52,8 @@ private:
 
     std::string m_mapPath;
     std::vector<StreamDescriptionPtr> m_streams;
+    std::vector<size_t> m_labelIds;
+    std::vector<size_t> m_featureIds;
     ImageLayoutKind m_dataFormat;
     int m_cpuThreadCount;
     bool m_randomize;

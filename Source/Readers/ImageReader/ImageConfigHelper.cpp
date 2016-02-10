@@ -33,45 +33,54 @@ namespace Microsoft { namespace MSR { namespace CNTK {
     {
         std::vector<std::string> featureNames = GetSectionsWithParameter(config, "width");
         std::vector<std::string> labelNames = GetSectionsWithParameter(config, "labelDim");
-
+        m_labelIds.clear();
+        m_featureIds.clear();
         // REVIEW alexeyk: currently support only one feature and label section.
-        if (featureNames.size() != 1 || labelNames.size() != 1)
+        /*if (featureNames.size() != 1 || labelNames.size() != 1)
         {
             RuntimeError(
                 "ImageReader currently supports a single feature and label stream. '%d' features , '%d' labels found.",
                 static_cast<int>(featureNames.size()),
                 static_cast<int>(labelNames.size()));
-        }
-
-        ConfigParameters featureSection = config(featureNames[0]);
-        size_t w = featureSection("width");
-        size_t h = featureSection("height");
-        size_t c = featureSection("channels");
-
-        std::string mbFmt = featureSection("mbFormat", "nchw");
-        if (AreEqualIgnoreCase(mbFmt, "nhwc") || AreEqualIgnoreCase(mbFmt, "legacy"))
+        }*/
+        int id_count = 0;
+        for(int i = 0; i < featureNames.size(); ++i)
         {
-            m_dataFormat = HWC;
+            ConfigParameters featureSection = config(featureNames[0]);
+            size_t w = featureSection("width");
+            size_t h = featureSection("height");
+            size_t c = featureSection("channels");
+
+            std::string mbFmt = featureSection("mbFormat", "nchw");
+            if (AreEqualIgnoreCase(mbFmt, "nhwc") || AreEqualIgnoreCase(mbFmt, "legacy"))
+            {
+                m_dataFormat = HWC;
+            }
+            else if (!AreEqualIgnoreCase(mbFmt, "nchw") || AreEqualIgnoreCase(mbFmt, "cudnn"))
+            {
+                RuntimeError("ImageReader does not support the sample format '%s', only 'nchw' and 'nhwc' are supported.", mbFmt.c_str());
+            }
+
+            auto features = std::make_shared<StreamDescription>();
+            features->m_id = id_count; ++id_count;
+            features->m_name = msra::strfun::utf16(featureSection.ConfigName());
+            features->m_sampleLayout = std::make_shared<TensorShape>(ImageDimensions(w, h, c).AsTensorShape(m_dataFormat));
+            m_streams.push_back(features);
+            m_featureIds.push_back(features->m_id);
         }
-        else if (!AreEqualIgnoreCase(mbFmt, "nchw") || AreEqualIgnoreCase(mbFmt, "cudnn"))
+        for(int i = 0; i < labelNames.size(); ++i)
         {
-            RuntimeError("ImageReader does not support the sample format '%s', only 'nchw' and 'nhwc' are supported.", mbFmt.c_str());
+            ConfigParameters label = config(labelNames[0]);
+            size_t labelDimension = label("labelDim");
+
+            auto labelSection = std::make_shared<StreamDescription>();
+            labelSection->m_id = id_count; ++id_count;
+            labelSection->m_name = msra::strfun::utf16(label.ConfigName());
+            labelSection->m_sampleLayout = std::make_shared<TensorShape>(labelDimension);
+            m_streams.push_back(labelSection);
+            m_labelIds.push_back(labelSection->m_id);
         }
-
-        auto features = std::make_shared<StreamDescription>();
-        features->m_id = 0;
-        features->m_name = msra::strfun::utf16(featureSection.ConfigName());
-        features->m_sampleLayout = std::make_shared<TensorShape>(ImageDimensions(w, h, c).AsTensorShape(m_dataFormat));
-        m_streams.push_back(features);
-
-        ConfigParameters label = config(labelNames[0]);
-        size_t labelDimension = label("labelDim");
-
-        auto labelSection = std::make_shared<StreamDescription>();
-        labelSection->m_id = 1;
-        labelSection->m_name = msra::strfun::utf16(label.ConfigName());
-        labelSection->m_sampleLayout = std::make_shared<TensorShape>(labelDimension);
-        m_streams.push_back(labelSection);
+        
 
         m_mapPath = config(L"file");
 
@@ -94,13 +103,17 @@ namespace Microsoft { namespace MSR { namespace CNTK {
         string precision = config.Find("precision", "float");
         if (AreEqualIgnoreCase(precision, "float"))
         {
-            features->m_elementType = ElementType::tfloat;
-            labelSection->m_elementType = ElementType::tfloat;
+            for(auto stream : m_streams)
+            {
+                stream->m_elementType = ElementType::tfloat;
+            }
         }
         else if (AreEqualIgnoreCase(precision, "double"))
         {
-            features->m_elementType = ElementType::tdouble;
-            labelSection->m_elementType = ElementType::tdouble;
+            for(auto stream : m_streams)
+            {
+                stream->m_elementType = ElementType::tdouble;
+            }
         }
         else
         {
@@ -115,16 +128,16 @@ namespace Microsoft { namespace MSR { namespace CNTK {
         return m_streams;
     }
 
-    size_t ImageConfigHelper::GetFeatureStreamId() const
+    std::vector<size_t> ImageConfigHelper::GetFeatureStreamIds() const
     {
         // Currently we only support a single feature/label stream, so the index is hard-wired.
-        return 0;
+        return m_featureIds;
     }
 
-    size_t ImageConfigHelper::GetLabelStreamId() const
+    std::vector<size_t> ImageConfigHelper::GetLabelStreamIds() const
     {
         // Currently we only support a single feature/label stream, so the index is hard-wired.
-        return 1;
+        return m_labelIds;
     }
 
     std::string ImageConfigHelper::GetMapPath() const
