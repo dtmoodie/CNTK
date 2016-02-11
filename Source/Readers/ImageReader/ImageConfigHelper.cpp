@@ -20,10 +20,10 @@ namespace Microsoft { namespace MSR { namespace CNTK {
             }
         }
 
-        if (sectionNames.empty())
+        /*if (sectionNames.empty())
         {
             RuntimeError("ImageReader requires %s parameter.", parameterName.c_str());
-        }
+        }*/
 
         return sectionNames;
     }
@@ -33,6 +33,10 @@ namespace Microsoft { namespace MSR { namespace CNTK {
     {
         std::vector<std::string> featureNames = GetSectionsWithParameter(config, "width");
         std::vector<std::string> labelNames = GetSectionsWithParameter(config, "labelDim");
+        if(featureNames.empty())
+        {
+            RuntimeError("ImageReader requires %s parameter.", "width");
+        }
         m_labelIds.clear();
         m_featureIds.clear();
         // REVIEW alexeyk: currently support only one feature and label section.

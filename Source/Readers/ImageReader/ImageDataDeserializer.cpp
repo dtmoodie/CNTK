@@ -172,7 +172,7 @@ std::vector<std::vector<SequenceDataPtr>> ImageDataDeserializer::GetSequencesByI
     m_labels.resize(ids.size(), std::vector<SparseSequenceDataPtr>(labelIds.size()));
 
     std::vector<std::vector<SequenceDataPtr>> result;
-    result.resize(ids.size());
+    result.resize(ids.size(), std::vector<SequenceDataPtr>(featureIds.size() + labelIds.size()));
 
 #pragma omp parallel for ordered schedule(dynamic)
     for (int i = 0; i < ids.size(); ++i)
@@ -214,6 +214,7 @@ std::vector<std::vector<SequenceDataPtr>> ImageDataDeserializer::GetSequencesByI
             image->m_data = cvImage.data;
             image->m_sampleLayout = std::make_shared<TensorShape>(dimensions.AsTensorShape(HWC));
             image->m_numberOfSamples = 1;
+            result[i][j] = image;
             if(j < m_labels[i].size())
             {
                 if (m_labels[i][j] == nullptr)
@@ -221,8 +222,8 @@ std::vector<std::vector<SequenceDataPtr>> ImageDataDeserializer::GetSequencesByI
                     m_labels[i][j] = std::make_shared<SparseSequenceData>();
                 }
                 m_labelGenerator[j]->CreateLabelFor(imageSubSequence.m_classId, *m_labels[i][j]);
-                result[i] = std::move(std::vector<SequenceDataPtr>{image, m_labels[i][j]});
-            }            
+                result[i][j + featureIds.size()] = std::move(m_labels[i][j]);
+            }
             ++j;
         }
     }

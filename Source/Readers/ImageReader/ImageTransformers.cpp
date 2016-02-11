@@ -83,10 +83,10 @@ void CropTransformer::Initialize(TransformerPtr next,
     ImageTransformerBase::Initialize(next, readerConfig);
     auto featureStreamIds = GetAppliedStreamIds();
 
-    if (featureStreamIds.size() != 1)
+    /*if (featureStreamIds.size() != 1)
     {
         RuntimeError("Only a single feature stream is supported.");
-    }
+    }*/
 
     InitFromConfig(readerConfig(GetInputStreams()[featureStreamIds[0]]->m_name));
 }
@@ -242,10 +242,10 @@ void ScaleTransformer::Initialize(TransformerPtr next,
 
     auto featureStreamIds = GetAppliedStreamIds();
 
-    if (featureStreamIds.size() != 1)
+    /*if (featureStreamIds.size() != 1)
     {
         RuntimeError("Only a single feature stream is supported.");
-    }
+    }*/
 
     const auto &feature = GetInputStreams()[featureStreamIds[0]];
     m_dataType = feature->m_elementType == ElementType::tfloat ? CV_32F : CV_64F;
@@ -316,10 +316,10 @@ void MeanTransformer::Initialize(TransformerPtr next,
 
     auto featureStreamIds = GetAppliedStreamIds();
 
-    if (featureStreamIds.size() != 1)
+    /*if (featureStreamIds.size() != 1)
     {
         RuntimeError("Only a single feature stream is supported.");
-    }
+    }*/
 
     InitFromConfig(readerConfig(GetInputStreams()[featureStreamIds[0]]->m_name));
 }

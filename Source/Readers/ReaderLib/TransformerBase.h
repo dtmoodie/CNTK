@@ -45,10 +45,13 @@ public:
         assert(m_next != nullptr);
         Sequences samples = m_next->GetNextSequences(sampleCount);
 
+        assert(samples.m_data.size());
+        assert(samples.m_data[0].size());
         if (samples.m_endOfEpoch)
         {
             return samples;
         }
+        
 
         const auto &appliedStreamIds = GetAppliedStreamIds();
         const auto &outputStreams = GetOutputStreams();
@@ -72,7 +75,8 @@ public:
                                    *outputStreams[id]);
             }
         }
-
+        assert(samples.m_data.size());
+        assert(samples.m_data[0].size());
         return samples;
     }
 
